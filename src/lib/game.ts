@@ -119,6 +119,21 @@ export function getUsedNumbers(grid: number[][]): Map<number, number> {
   return used
 }
 
+export function getCompletedNumbers(progress: GameProgress): Set<number> {
+  const completed = new Set<number>()
+
+  for (let row = 0; row < progress.puzzle.size; row += 1) {
+    for (let col = 0; col < progress.puzzle.size; col += 1) {
+      const value = progress.grid[row][col]
+      if (value && value === progress.puzzle.solution[row][col]) {
+        completed.add(value)
+      }
+    }
+  }
+
+  return completed
+}
+
 export function getFilledCount(grid: number[][]): number {
   let count = 0
 

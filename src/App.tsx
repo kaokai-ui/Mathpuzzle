@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react'
 import {
   cloneGrid,
   createNewProgress,
+  getCompletedNumbers,
   DIFFICULTY_CONFIGS,
   findFirstEditableCell,
   formatDuration,
   getColumnState,
   getFilledCount,
   getRowState,
-  getUsedNumbers,
   isEditableCell,
   isPuzzleSolved,
   OPERATOR_LABELS,
@@ -252,7 +252,7 @@ function App() {
   const selectedDifficulty = settings.difficulty
   const currentConfig = DIFFICULTY_CONFIGS[selectedDifficulty]
   const progressSummary = getProgressSummary(game)
-  const usedNumbers = game ? getUsedNumbers(game.grid) : new Map<number, number>()
+  const completedNumbers = game ? getCompletedNumbers(game) : new Set<number>()
   const isTabletViewport = viewport.width > 640 && viewport.width <= 1180
   const keypadItems = game
     ? getKeypadItems(game.puzzle.numPool, isTabletViewport, game.puzzle.size === 4)
@@ -334,11 +334,8 @@ function App() {
       return
     }
 
-    const currentValue = game.grid[row][col]
-    const usedCount = usedNumbers.get(value) ?? 0
-    const isUnavailable = usedCount > 0 && currentValue !== value
-    if (isUnavailable) {
-      setMessage(`數字 ${value} 已經在棋盤上使用。`)
+    if (completedNumbers.has(value)) {
+      setMessage(`數字 ${value} 已經完成。`)
       return
     }
 
@@ -692,17 +689,13 @@ function App() {
                 {keypadItems.map((item) => {
                   if (item.type === 'number') {
                     const value = item.value
-                    const currentValue = game.selectedCell
-                      ? game.grid[game.selectedCell.row][game.selectedCell.col]
-                      : 0
-                    const usedCount = usedNumbers.get(value) ?? 0
-                    const disabled = usedCount > 0 && currentValue !== value
+                    const disabled = completedNumbers.has(value)
 
                     return (
                       <button
                         key={value}
                         type="button"
-                        className={`keypad-button ${currentValue === value ? 'is-active' : ''}`}
+                        className={`keypad-button ${disabled ? 'is-complete' : ''}`}
                         onClick={() => inputNumber(value)}
                         disabled={disabled}
                       >
