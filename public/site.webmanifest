@@ -1,6 +1,6 @@
 {
-  "name": "Crossmath Puzzle",
-  "short_name": "Crossmath",
+  "name": "Math-puzzle",
+  "short_name": "Math-puzzle",
   "description": "A cross-platform math puzzle game built with Vite, React, and TypeScript.",
   "start_url": "/",
   "display": "standalone",
