@@ -454,7 +454,7 @@ function App() {
           <header className="hero-card card-surface">
             <div className="hero-copy">
               <span className="eyebrow">Cross Platform Puzzle</span>
-              <h1>Crossmath</h1>
+              <h1>Math-puzzle</h1>
               <p>
                 重新整理成 Vite + React + TypeScript，支援 PC、iPad 與 Android Pad，
                 並且會自動保存你的設定與遊戲進度。
@@ -580,7 +580,7 @@ function App() {
           <div className="board-stage">
             <section className="board-card card-surface">
               <div
-                className="crossmath-board"
+                className="math-puzzle-board"
                 style={{
                   ...layoutMetrics.gridStyle,
                   gridTemplateColumns: buildBoardTrackTemplate(
