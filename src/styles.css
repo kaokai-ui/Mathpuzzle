@@ -368,7 +368,7 @@ select {
   overflow: hidden;
 }
 
-.crossmath-board {
+.math-puzzle-board {
   display: grid;
   gap: var(--grid-gap);
   align-content: center;
