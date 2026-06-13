@@ -520,6 +520,7 @@ select {
 }
 
 .keypad-button.is-complete,
+.keypad-button.is-used,
 .keypad-button:disabled {
   background: rgba(91, 112, 133, 0.18);
   color: rgba(33, 53, 72, 0.42);

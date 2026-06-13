@@ -134,6 +134,51 @@ export function getCompletedNumbers(progress: GameProgress): Set<number> {
   return completed
 }
 
+export function canPlaceNumber(progress: GameProgress, value: number, row: number, col: number): { allowed: boolean; reason?: string } {
+  if (!isEditableCell(progress, row, col)) {
+    return { allowed: false, reason: '此格不可編輯。' }
+  }
+
+  if (progress.status === 'won') {
+    return { allowed: false, reason: '遊戲已結束。' }
+  }
+
+  const completed = getCompletedNumbers(progress)
+  if (completed.has(value)) {
+    return { allowed: false, reason: `數字 ${value} 已經完成。` }
+  }
+
+  const used = getUsedNumbers(progress.grid)
+  const currentCellValue = progress.grid[row][col]
+
+  const alreadyUsed = (used.get(value) ?? 0) - (currentCellValue === value ? 1 : 0)
+  if (alreadyUsed > 0) {
+    return { allowed: false, reason: `數字 ${value} 已在使用中。` }
+  }
+
+  return { allowed: true }
+}
+
+export function getPlacementState(progress: GameProgress): { completed: Set<number>; used: Map<number, number> } {
+  return {
+    completed: getCompletedNumbers(progress),
+    used: getUsedNumbers(progress.grid),
+  }
+}
+
+export function applyMove(progress: GameProgress, value: number, row: number, col: number): GameProgress {
+  const nextGrid = cloneGrid(progress.grid)
+  nextGrid[row][col] = value
+  const nextStatus = isPuzzleSolved({ ...progress, grid: nextGrid }) ? 'won' : 'playing'
+
+  return {
+    ...progress,
+    grid: nextGrid,
+    status: nextStatus,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 export function getFilledCount(grid: number[][]): number {
   let count = 0
 
