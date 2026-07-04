@@ -39,6 +39,14 @@ export const DIFFICULTY_CONFIGS: Record<DifficultyKey, DifficultyConfig> = {
   },
 }
 
+export interface DifficultyCard extends DifficultyConfig {
+  key: DifficultyKey
+}
+
+export const DIFFICULTY_CARDS: DifficultyCard[] = (Object.keys(DIFFICULTY_CONFIGS) as DifficultyKey[]).map(
+  (key) => ({ key, ...DIFFICULTY_CONFIGS[key] }),
+)
+
 export const DEFAULT_SETTINGS: Settings = {
   difficulty: 'easy',
   timerEnabled: true,
@@ -86,6 +94,10 @@ function createPuzzleId(): string {
   return `puzzle-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+export function isLargeBoard(puzzle: PuzzleDefinition): boolean {
+  return puzzle.size >= 4
+}
+
 export function findFirstEditableCell(given: boolean[][]): CellPosition | null {
   for (let row = 0; row < given.length; row += 1) {
     for (let col = 0; col < given[row].length; col += 1) {
@@ -121,11 +133,14 @@ export function getUsedNumbers(grid: number[][]): Map<number, number> {
 
 export function getCompletedNumbers(progress: GameProgress): Set<number> {
   const completed = new Set<number>()
+  const { size } = progress.puzzle
+  const rowStates = Array.from({ length: size }, (_, row) => getRowState(progress, row))
+  const colStates = Array.from({ length: size }, (_, col) => getColumnState(progress, col))
 
-  for (let row = 0; row < progress.puzzle.size; row += 1) {
-    for (let col = 0; col < progress.puzzle.size; col += 1) {
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
       const value = progress.grid[row][col]
-      if (value && value === progress.puzzle.solution[row][col]) {
+      if (value && rowStates[row] === 'correct' && colStates[col] === 'correct') {
         completed.add(value)
       }
     }
@@ -166,15 +181,60 @@ export function getPlacementState(progress: GameProgress): { completed: Set<numb
   }
 }
 
-export function applyMove(progress: GameProgress, value: number, row: number, col: number): GameProgress {
+export function setCellValue(progress: GameProgress, row: number, col: number, value: number): GameProgress {
   const nextGrid = cloneGrid(progress.grid)
   nextGrid[row][col] = value
-  const nextStatus = isPuzzleSolved({ ...progress, grid: nextGrid }) ? 'won' : 'playing'
 
   return {
     ...progress,
     grid: nextGrid,
-    status: nextStatus,
+    status: isPuzzleSolved({ ...progress, grid: nextGrid }) ? 'won' : 'playing',
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+export function findHintTarget(progress: GameProgress): CellPosition | null {
+  const selected = progress.selectedCell
+
+  if (
+    selected &&
+    isEditableCell(progress, selected.row, selected.col) &&
+    progress.grid[selected.row][selected.col] !== progress.puzzle.solution[selected.row][selected.col]
+  ) {
+    return selected
+  }
+
+  return findFirstEditableCell(
+    progress.puzzle.given.map((row, rowIndex) =>
+      row.map(
+        (isGiven, colIndex) =>
+          isGiven || progress.grid[rowIndex][colIndex] === progress.puzzle.solution[rowIndex][colIndex],
+      ),
+    ),
+  )
+}
+
+export function applyHint(progress: GameProgress, target: CellPosition): GameProgress {
+  const value = progress.puzzle.solution[target.row][target.col]
+  const nextGrid = cloneGrid(progress.grid)
+
+  // 先清掉玩家放錯位置的相同數字，避免提示後同一個數字在盤面出現兩次
+  for (let row = 0; row < progress.puzzle.size; row += 1) {
+    for (let col = 0; col < progress.puzzle.size; col += 1) {
+      if (nextGrid[row][col] === value) {
+        nextGrid[row][col] = 0
+      }
+    }
+  }
+
+  nextGrid[target.row][target.col] = value
+
+  return {
+    ...progress,
+    grid: nextGrid,
+    hintsLeft: progress.hintsLeft - 1,
+    selectedCell: target,
+    status: isPuzzleSolved({ ...progress, grid: nextGrid }) ? 'won' : 'playing',
     updatedAt: new Date().toISOString(),
   }
 }
@@ -248,10 +308,6 @@ function getLineOptions(numbers: number[], operators: Operator[]): Array<{ ops: 
       current.push(operator)
       visit(index + 1)
       current.pop()
-
-      if (results.length >= 24) {
-        return
-      }
     }
   }
 
@@ -287,17 +343,8 @@ export function generatePuzzle(difficulty: DifficultyKey): PuzzleDefinition {
       continue
     }
 
-    const rowOps = rowOptions.map((options) => options[randomInt(0, options.length - 1)].ops)
-    const rowResults = rowOptions.map((options, index) => {
-      const matches = options.filter((option) => option.ops.join('') === rowOps[index].join(''))
-      return matches[randomInt(0, matches.length - 1)].result
-    })
-
-    const colOps = colOptions.map((options) => options[randomInt(0, options.length - 1)].ops)
-    const colResults = colOptions.map((options, index) => {
-      const matches = options.filter((option) => option.ops.join('') === colOps[index].join(''))
-      return matches[randomInt(0, matches.length - 1)].result
-    })
+    const rowChoices = rowOptions.map((options) => options[randomInt(0, options.length - 1)])
+    const colChoices = colOptions.map((options) => options[randomInt(0, options.length - 1)])
 
     const given = createBooleanMatrix(config.size)
     const coordinates = shuffle(
@@ -319,10 +366,10 @@ export function generatePuzzle(difficulty: DifficultyKey): PuzzleDefinition {
       numPool: numbers,
       solution,
       given,
-      rowOps,
-      colOps,
-      rowResults,
-      colResults,
+      rowOps: rowChoices.map((choice) => choice.ops),
+      colOps: colChoices.map((choice) => choice.ops),
+      rowResults: rowChoices.map((choice) => choice.result),
+      colResults: colChoices.map((choice) => choice.result),
       createdAt: new Date().toISOString(),
     }
   }
@@ -361,12 +408,31 @@ export function isEditableCell(progress: GameProgress, row: number, col: number)
   return !progress.puzzle.given[row][col]
 }
 
+// 勝利條件以「數字不重複 + 所有行列等式成立」判定，而不是逐格比對預存解答，
+// 因為同一組等式可能有不只一種合法排列。
 export function isPuzzleSolved(progress: GameProgress): boolean {
-  for (let row = 0; row < progress.puzzle.size; row += 1) {
-    for (let col = 0; col < progress.puzzle.size; col += 1) {
-      if (progress.grid[row][col] !== progress.puzzle.solution[row][col]) {
+  const { size } = progress.puzzle
+  const seen = new Set<number>()
+
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const value = progress.grid[row][col]
+      if (!value || seen.has(value)) {
         return false
       }
+      seen.add(value)
+    }
+  }
+
+  for (let row = 0; row < size; row += 1) {
+    if (getRowState(progress, row) !== 'correct') {
+      return false
+    }
+  }
+
+  for (let col = 0; col < size; col += 1) {
+    if (getColumnState(progress, col) !== 'correct') {
+      return false
     }
   }
 

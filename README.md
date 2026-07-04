@@ -34,6 +34,13 @@ npm run preview
 
 建置完成的靜態檔會輸出到 `dist/`。
 
+## 測試與檢查
+
+```bash
+npm test        # vitest 單元測試（src/lib 遊戲邏輯與存檔驗證）
+npm run lint    # ESLint（typescript-eslint + react-hooks）
+```
+
 ## 專案結構
 
 ```text

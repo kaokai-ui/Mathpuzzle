@@ -1,13 +1,5 @@
-import { DIFFICULTY_CONFIGS } from '../lib/game'
-import { getFilledCount, formatDuration } from '../lib/game'
+import { DIFFICULTY_CARDS, DIFFICULTY_CONFIGS, formatDuration, getFilledCount } from '../lib/game'
 import type { DifficultyKey, GameProgress, Settings } from '../lib/types'
-
-function getDifficultyCards() {
-  return (Object.keys(DIFFICULTY_CONFIGS) as DifficultyKey[]).map((key) => ({
-    key,
-    ...DIFFICULTY_CONFIGS[key],
-  }))
-}
 
 function getProgressSummary(progress: GameProgress | null): string {
   if (!progress) {
@@ -42,7 +34,6 @@ export function HomeScreen({
   onOpenSettings,
   onOpenRules,
 }: HomeScreenProps) {
-  const difficultyCards = getDifficultyCards()
   const selectedDifficulty = settings.difficulty
   const currentConfig = DIFFICULTY_CONFIGS[selectedDifficulty]
   const progressSummary = getProgressSummary(game)
@@ -77,7 +68,7 @@ export function HomeScreen({
           </div>
 
           <div className="difficulty-grid">
-            {difficultyCards.map((card) => (
+            {DIFFICULTY_CARDS.map((card) => (
               <button
                 key={card.key}
                 type="button"

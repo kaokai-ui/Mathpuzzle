@@ -6,6 +6,30 @@ const LEGACY_SETTINGS_KEY = 'crossmath-settings'
 const GAME_KEY = 'math-puzzle-progress'
 const LEGACY_GAME_KEY = 'crossmath-progress'
 
+function readItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeItem(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // 儲存空間滿或無法使用時，寧可放棄保存也不要讓遊戲中斷
+  }
+}
+
+function removeItem(key: string): void {
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // 同上，移除失敗不影響遊戲進行
+  }
+}
+
 function safeParse<T>(value: string | null): T | null {
   if (!value) {
     return null
@@ -22,7 +46,7 @@ function isValidDifficultyKey(value: unknown): value is DifficultyKey {
   return typeof value === 'string' && value in DIFFICULTY_CONFIGS
 }
 
-function validateSettings(raw: unknown): Settings {
+export function validateSettings(raw: unknown): Settings {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return DEFAULT_SETTINGS
   }
@@ -60,7 +84,7 @@ function isNestedOperatorArray(value: unknown): value is string[][] {
   return Array.isArray(value) && value.every((row) => isOperatorArray(row))
 }
 
-function validateProgress(raw: unknown): GameProgress | null {
+export function validateProgress(raw: unknown): GameProgress | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return null
   }
@@ -81,11 +105,22 @@ function validateProgress(raw: unknown): GameProgress | null {
     return null
   }
 
+  const cellCount = puzzle.size * puzzle.size
+
   if (!isNestedNumberArray(puzzle.solution) || puzzle.solution.length !== puzzle.size) {
     return null
   }
 
   if (puzzle.solution.some((row) => row.length !== puzzle.size)) {
+    return null
+  }
+
+  const solutionValues = puzzle.solution.flat()
+  if (solutionValues.some((value) => !Number.isInteger(value) || value < 1 || value > cellCount)) {
+    return null
+  }
+
+  if (new Set(solutionValues).size !== cellCount) {
     return null
   }
 
@@ -97,7 +132,7 @@ function validateProgress(raw: unknown): GameProgress | null {
     return null
   }
 
-  if (!isNumberArray(puzzle.numPool)) {
+  if (!isNumberArray(puzzle.numPool) || puzzle.numPool.length !== cellCount) {
     return null
   }
 
@@ -106,6 +141,14 @@ function validateProgress(raw: unknown): GameProgress | null {
   }
 
   if (!isNestedOperatorArray(puzzle.colOps) || puzzle.colOps.length !== puzzle.size) {
+    return null
+  }
+
+  if (puzzle.rowOps.some((ops) => ops.length !== (puzzle.size as number) - 1)) {
+    return null
+  }
+
+  if (puzzle.colOps.some((ops) => ops.length !== (puzzle.size as number) - 1)) {
     return null
   }
 
@@ -125,11 +168,21 @@ function validateProgress(raw: unknown): GameProgress | null {
     return null
   }
 
-  if ((data.grid as unknown[][]).some((row) => row.length !== puzzle.size)) {
+  if (data.grid.some((row) => row.length !== puzzle.size)) {
     return null
   }
 
-  if (typeof data.hintsLeft !== 'number' || data.hintsLeft < 0) {
+  if (data.grid.flat().some((value) => !Number.isInteger(value) || value < 0 || value > cellCount)) {
+    return null
+  }
+
+  const maxHints = DIFFICULTY_CONFIGS[puzzle.difficulty].hints
+  if (
+    typeof data.hintsLeft !== 'number' ||
+    !Number.isInteger(data.hintsLeft) ||
+    data.hintsLeft < 0 ||
+    data.hintsLeft > maxHints
+  ) {
     return null
   }
 
@@ -162,15 +215,17 @@ export function loadSettings(): Settings {
     return DEFAULT_SETTINGS
   }
 
-  const raw = safeParse<unknown>(
-    window.localStorage.getItem(SETTINGS_KEY) ?? window.localStorage.getItem(LEGACY_SETTINGS_KEY),
-  )
+  const raw = safeParse<unknown>(readItem(SETTINGS_KEY) ?? readItem(LEGACY_SETTINGS_KEY))
   return validateSettings(raw)
 }
 
 export function saveSettings(settings: Settings): void {
-  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
-  window.localStorage.removeItem(LEGACY_SETTINGS_KEY)
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  writeItem(SETTINGS_KEY, JSON.stringify(settings))
+  removeItem(LEGACY_SETTINGS_KEY)
 }
 
 export function loadProgress(): GameProgress | null {
@@ -178,19 +233,21 @@ export function loadProgress(): GameProgress | null {
     return null
   }
 
-  const raw = safeParse<unknown>(
-    window.localStorage.getItem(GAME_KEY) ?? window.localStorage.getItem(LEGACY_GAME_KEY),
-  )
+  const raw = safeParse<unknown>(readItem(GAME_KEY) ?? readItem(LEGACY_GAME_KEY))
   return validateProgress(raw)
 }
 
 export function saveProgress(progress: GameProgress | null): void {
-  if (progress) {
-    window.localStorage.setItem(GAME_KEY, JSON.stringify(progress))
-    window.localStorage.removeItem(LEGACY_GAME_KEY)
+  if (typeof window === 'undefined') {
     return
   }
 
-  window.localStorage.removeItem(GAME_KEY)
-  window.localStorage.removeItem(LEGACY_GAME_KEY)
+  if (progress) {
+    writeItem(GAME_KEY, JSON.stringify(progress))
+    removeItem(LEGACY_GAME_KEY)
+    return
+  }
+
+  removeItem(GAME_KEY)
+  removeItem(LEGACY_GAME_KEY)
 }

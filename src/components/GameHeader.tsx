@@ -1,5 +1,5 @@
 import { DIFFICULTY_CONFIGS, formatDuration } from '../lib/game'
-import type { DifficultyKey, GameProgress, Settings } from '../lib/types'
+import type { GameProgress, Settings } from '../lib/types'
 
 interface GameHeaderProps {
   game: GameProgress

@@ -1,12 +1,14 @@
 import type { KeyboardEvent } from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { DIFFICULTY_CONFIGS } from './lib/game'
 import { loadSettings, saveSettings } from './lib/storage'
-import type { DifficultyKey, Settings } from './lib/types'
+import { clamp } from './lib/utils'
+import type { Settings } from './lib/types'
 
 import { useGameState } from './hooks/useGameState'
+import { useGameTimer } from './hooks/useGameTimer'
 import { useLayoutMetrics } from './hooks/useLayoutMetrics'
+import { useTwoDigitInput } from './hooks/useTwoDigitInput'
 
 import { Board } from './components/Board'
 import { GameHeader } from './components/GameHeader'
@@ -15,8 +17,11 @@ import { Keypad } from './components/Keypad'
 import { RulesModal } from './components/RulesModal'
 import { SettingsModal } from './components/SettingsModal'
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
+const ARROW_DELTAS: Record<string, { row: number; col: number }> = {
+  ArrowUp: { row: -1, col: 0 },
+  ArrowDown: { row: 1, col: 0 },
+  ArrowLeft: { row: 0, col: -1 },
+  ArrowRight: { row: 0, col: 1 },
 }
 
 function App() {
@@ -34,9 +39,8 @@ function App() {
     selectCell,
     inputNumber,
     eraseCell,
-    useHint,
-    commitBufferedDigit,
-    tickTimer,
+    revealHint,
+    addElapsedSeconds,
   } = useGameState()
 
   const { layoutMetrics, isTabletViewport } = useLayoutMetrics(game)
@@ -45,17 +49,20 @@ function App() {
     saveSettings(settings)
   }, [settings])
 
+  const timerActive = screen === 'game' && !!game && game.status !== 'won' && settings.timerEnabled
+  useGameTimer(timerActive, addElapsedSeconds)
+
+  const digitInput = useTwoDigitInput({
+    maxValue: game?.puzzle.numPool.length ?? 9,
+    onCommit: inputNumber,
+  })
+
+  const puzzleId = game?.puzzle.id ?? null
+  const { clearPending: clearPendingDigit } = digitInput
+
   useEffect(() => {
-    if (!game || screen !== 'game' || !settings.timerEnabled || game.status === 'won') {
-      return
-    }
-
-    const timerId = window.setInterval(() => {
-      tickTimer()
-    }, 1000)
-
-    return () => window.clearInterval(timerId)
-  }, [game?.status, screen, settings.timerEnabled, tickTimer])
+    clearPendingDigit()
+  }, [puzzleId, clearPendingDigit])
 
   function updateSettings(partial: Partial<Settings>) {
     setSettings((current) => ({
@@ -79,111 +86,67 @@ function App() {
   }
 
   function backToHome() {
+    digitInput.clearPending()
     setScreen('home')
     setMessage('進度已保存在這台裝置。')
   }
 
-  const digitBufferRef = useRef<string>('')
-  const digitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function handleSelectCell(row: number, col: number) {
+    digitInput.flush()
+    selectCell(row, col)
+  }
 
-  const flushDigitBuffer = useCallback(() => {
-    if (digitTimerRef.current) {
-      clearTimeout(digitTimerRef.current)
-      digitTimerRef.current = null
-    }
-    if (digitBufferRef.current) {
-      commitBufferedDigit(Number(digitBufferRef.current))
-      digitBufferRef.current = ''
-    }
-  }, [commitBufferedDigit])
+  function handleInputNumber(value: number) {
+    digitInput.clearPending()
+    inputNumber(value)
+  }
+
+  function handleEraseCell() {
+    digitInput.clearPending()
+    eraseCell()
+  }
+
+  function handleRevealHint() {
+    digitInput.clearPending()
+    revealHint()
+  }
 
   function handleBoardKeyDown(event: KeyboardEvent<HTMLButtonElement>, row: number, col: number) {
     if (!game) {
       return
     }
 
-    const isHardBoard = game.puzzle.size === 4
-
     if (/^[0-9]$/.test(event.key)) {
       event.preventDefault()
-
-      if (!isHardBoard) {
-        if (event.key === '0') {
-          eraseCell()
-        } else {
-          inputNumber(Number(event.key))
-        }
-        return
-      }
-
-      if (digitBufferRef.current && digitTimerRef.current) {
-        clearTimeout(digitTimerRef.current)
-        digitTimerRef.current = null
-        const combined = digitBufferRef.current + event.key
-        const combinedNum = Number(combined)
-        digitBufferRef.current = ''
-        if (combinedNum >= 10 && combinedNum <= 16) {
-          commitBufferedDigit(combinedNum)
-        } else {
-          commitBufferedDigit(Number(combined[0]))
-          if (event.key !== '0') {
-            commitBufferedDigit(Number(event.key))
-          }
-        }
-        return
-      }
-
-      if (event.key === '1' && isHardBoard) {
-        digitBufferRef.current = '1'
-        digitTimerRef.current = setTimeout(() => {
-          digitBufferRef.current = ''
-          digitTimerRef.current = null
-          commitBufferedDigit(1)
-        }, 900)
-        return
-      }
-
-      if (event.key === '0') {
+      const digit = Number(event.key)
+      if (digit === 0 && !digitInput.hasPending()) {
         eraseCell()
-      } else {
-        inputNumber(Number(event.key))
+        return
       }
+      digitInput.pushDigit(digit)
       return
     }
 
     if (event.key === 'Backspace' || event.key === 'Delete') {
       event.preventDefault()
-      if (digitBufferRef.current) {
-        digitBufferRef.current = ''
-        if (digitTimerRef.current) {
-          clearTimeout(digitTimerRef.current)
-          digitTimerRef.current = null
-        }
+      if (digitInput.clearPending()) {
         return
       }
       eraseCell()
       return
     }
 
-    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    const delta = ARROW_DELTAS[event.key]
+    if (!delta) {
       return
     }
 
     event.preventDefault()
-    flushDigitBuffer()
-
-    const delta =
-      event.key === 'ArrowUp'
-        ? { row: -1, col: 0 }
-        : event.key === 'ArrowDown'
-          ? { row: 1, col: 0 }
-          : event.key === 'ArrowLeft'
-            ? { row: 0, col: -1 }
-            : { row: 0, col: 1 }
-
-    const nextRow = clamp(row + delta.row, 0, game.puzzle.size - 1)
-    const nextCol = clamp(col + delta.col, 0, game.puzzle.size - 1)
-    selectCell(nextRow, nextCol)
+    digitInput.flush()
+    selectCell(
+      clamp(row + delta.row, 0, game.puzzle.size - 1),
+      clamp(col + delta.col, 0, game.puzzle.size - 1),
+    )
   }
 
   return (
@@ -217,7 +180,7 @@ function App() {
             <Board
               game={game}
               gridStyle={layoutMetrics.gridStyle}
-              onSelectCell={selectCell}
+              onSelectCell={handleSelectCell}
               onBoardKeyDown={handleBoardKeyDown}
             />
           </div>
@@ -240,9 +203,9 @@ function App() {
               game={game}
               keypadStyle={layoutMetrics.keypadStyle}
               isTabletViewport={isTabletViewport}
-              onInputNumber={inputNumber}
-              onEraseCell={eraseCell}
-              onUseHint={useHint}
+              onInputNumber={handleInputNumber}
+              onEraseCell={handleEraseCell}
+              onUseHint={handleRevealHint}
             />
           )}
 

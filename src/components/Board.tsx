@@ -1,33 +1,47 @@
 import type { CSSProperties, KeyboardEvent } from 'react'
 
-import { OPERATOR_LABELS, getColumnState, getRowState } from '../lib/game'
-import type { CellPosition, EquationState, GameProgress, Operator } from '../lib/types'
+import { getColumnState, getRowState, OPERATOR_LABELS } from '../lib/game'
+import type { EquationState, GameProgress } from '../lib/types'
 
+type TrackKind = 'data' | 'op' | 'eq' | 'result'
+
+function getTrackKind(index: number, size: number): TrackKind {
+  if (index === size * 2 - 1) {
+    return 'eq'
+  }
+
+  if (index === size * 2) {
+    return 'result'
+  }
+
+  return index % 2 === 0 ? 'data' : 'op'
+}
+
+// 格子的對錯以所屬行列等式的狀態判定（等式全部成立才算對），
+// 不與預存解答逐格比對，因為同一組等式可能有多種合法排列。
 function getCellClass(
   progress: GameProgress,
   row: number,
   col: number,
-  selectedCell: CellPosition | null,
+  rowStates: EquationState[],
+  colStates: EquationState[],
 ): string {
   const classes = ['board-cell']
+  const isGiven = progress.puzzle.given[row][col]
 
-  if (progress.puzzle.given[row][col]) {
-    classes.push('is-given')
-  } else {
-    classes.push('is-editable')
-  }
+  classes.push(isGiven ? 'is-given' : 'is-editable')
 
-  if (selectedCell?.row === row && selectedCell?.col === col) {
+  if (progress.selectedCell?.row === row && progress.selectedCell?.col === col) {
     classes.push('is-selected')
   }
 
   const value = progress.grid[row][col]
-  if (value && value === progress.puzzle.solution[row][col] && !progress.puzzle.given[row][col]) {
-    classes.push('is-correct')
-  }
-
-  if (value && value !== progress.puzzle.solution[row][col] && !progress.puzzle.given[row][col]) {
-    classes.push('is-wrong')
+  if (value && !isGiven) {
+    if (rowStates[row] === 'wrong' || colStates[col] === 'wrong') {
+      classes.push('is-wrong')
+    } else if (rowStates[row] === 'correct' && colStates[col] === 'correct') {
+      classes.push('is-correct')
+    }
   }
 
   return classes.join(' ')
@@ -45,21 +59,17 @@ function getResultClass(state: EquationState): string {
   return 'result-box'
 }
 
-function renderOperator(operator: Operator): string {
-  return OPERATOR_LABELS[operator]
-}
-
-function buildBoardTrackTemplate(size: number, cellToken: string, opToken: string, eqToken: string, resultToken: string) {
+function buildBoardTrackTemplate(size: number): string {
   const tracks: string[] = []
 
   for (let index = 0; index < size; index += 1) {
-    tracks.push(cellToken)
+    tracks.push('var(--cell-size)')
     if (index < size - 1) {
-      tracks.push(opToken)
+      tracks.push('var(--op-size)')
     }
   }
 
-  tracks.push(eqToken, resultToken)
+  tracks.push('var(--eq-size)', 'var(--result-size)')
   return tracks.join(' ')
 }
 
@@ -71,47 +81,34 @@ interface BoardProps {
 }
 
 export function Board({ game, gridStyle, onSelectCell, onBoardKeyDown }: BoardProps) {
+  const size = game.puzzle.size
+  const rowStates = Array.from({ length: size }, (_, row) => getRowState(game, row))
+  const colStates = Array.from({ length: size }, (_, col) => getColumnState(game, col))
+  const trackTemplate = buildBoardTrackTemplate(size)
+
   return (
     <section className="board-card card-surface">
       <div
         className="math-puzzle-board"
         style={{
           ...gridStyle,
-          gridTemplateColumns: buildBoardTrackTemplate(
-            game.puzzle.size,
-            'var(--cell-size)',
-            'var(--op-size)',
-            'var(--eq-size)',
-            'var(--result-size)',
-          ),
-          gridTemplateRows: buildBoardTrackTemplate(
-            game.puzzle.size,
-            'var(--cell-size)',
-            'var(--op-size)',
-            'var(--eq-size)',
-            'var(--result-size)',
-          ),
+          gridTemplateColumns: trackTemplate,
+          gridTemplateRows: trackTemplate,
         }}
       >
-        {Array.from({ length: game.puzzle.size * 2 + 1 }, (_, rowIndex) =>
-          Array.from({ length: game.puzzle.size * 2 + 1 }, (_, colIndex) => {
-            const isDataRow = rowIndex < game.puzzle.size * 2 - 1 && rowIndex % 2 === 0
-            const isDataCol = colIndex < game.puzzle.size * 2 - 1 && colIndex % 2 === 0
-            const isOpRow = rowIndex < game.puzzle.size * 2 - 1 && rowIndex % 2 === 1
-            const isOpCol = colIndex < game.puzzle.size * 2 - 1 && colIndex % 2 === 1
-            const isEqRow = rowIndex === game.puzzle.size * 2 - 1
-            const isEqCol = colIndex === game.puzzle.size * 2 - 1
-            const isResultRow = rowIndex === game.puzzle.size * 2
-            const isResultCol = colIndex === game.puzzle.size * 2
+        {Array.from({ length: size * 2 + 1 }, (_, rowIndex) =>
+          Array.from({ length: size * 2 + 1 }, (_, colIndex) => {
+            const rowKind = getTrackKind(rowIndex, size)
+            const colKind = getTrackKind(colIndex, size)
             const row = Math.floor(rowIndex / 2)
             const col = Math.floor(colIndex / 2)
 
-            if (isDataRow && isDataCol) {
+            if (rowKind === 'data' && colKind === 'data') {
               return (
                 <button
                   key={`cell-${rowIndex}-${colIndex}`}
                   type="button"
-                  className={getCellClass(game, row, col, game.selectedCell)}
+                  className={getCellClass(game, row, col, rowStates, colStates)}
                   onClick={() => onSelectCell(row, col)}
                   onKeyDown={(event) => onBoardKeyDown(event, row, col)}
                 >
@@ -120,41 +117,39 @@ export function Board({ game, gridStyle, onSelectCell, onBoardKeyDown }: BoardPr
               )
             }
 
-            if (isDataRow && isOpCol) {
+            if (rowKind === 'data' && colKind === 'op') {
               return (
                 <div key={`row-op-${rowIndex}-${colIndex}`} className="operator-box">
-                  {renderOperator(game.puzzle.rowOps[row][Math.floor(colIndex / 2)])}
+                  {OPERATOR_LABELS[game.puzzle.rowOps[row][col]]}
                 </div>
               )
             }
 
-            if (isOpRow && isDataCol) {
+            if (rowKind === 'op' && colKind === 'data') {
               return (
                 <div key={`col-op-${rowIndex}-${colIndex}`} className="operator-box">
-                  {renderOperator(game.puzzle.colOps[col][Math.floor(rowIndex / 2)])}
+                  {OPERATOR_LABELS[game.puzzle.colOps[col][row]]}
                 </div>
               )
             }
 
-            if (isResultRow && isDataCol) {
-              const state = getColumnState(game, col)
+            if (rowKind === 'result' && colKind === 'data') {
               return (
-                <div key={`col-result-${col}`} className={getResultClass(state)}>
+                <div key={`col-result-${col}`} className={getResultClass(colStates[col])}>
                   {game.puzzle.colResults[col]}
                 </div>
               )
             }
 
-            if (isDataRow && isResultCol) {
-              const state = getRowState(game, row)
+            if (rowKind === 'data' && colKind === 'result') {
               return (
-                <div key={`row-result-${row}`} className={getResultClass(state)}>
+                <div key={`row-result-${row}`} className={getResultClass(rowStates[row])}>
                   {game.puzzle.rowResults[row]}
                 </div>
               )
             }
 
-            if ((isEqCol && isDataRow) || (isEqRow && isDataCol)) {
+            if ((rowKind === 'data' && colKind === 'eq') || (rowKind === 'eq' && colKind === 'data')) {
               return (
                 <div key={`eq-${rowIndex}-${colIndex}`} className="operator-box is-equals">
                   =

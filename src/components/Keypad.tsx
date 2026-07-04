@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 
-import { getPlacementState } from '../lib/game'
+import { getPlacementState, isLargeBoard } from '../lib/game'
 import type { GameProgress } from '../lib/types'
 
 type KeypadItem =
@@ -46,8 +46,7 @@ export function Keypad({
   onEraseCell,
   onUseHint,
 }: KeypadProps) {
-  const isHardBoard = game.puzzle.size === 4
-  const keypadItems = getKeypadItems(game.puzzle.numPool, isTabletViewport, isHardBoard)
+  const keypadItems = getKeypadItems(game.puzzle.numPool, isTabletViewport, isLargeBoard(game.puzzle))
   const { completed: completedNumbers, used: usedNumbers } = getPlacementState(game)
 
   return (

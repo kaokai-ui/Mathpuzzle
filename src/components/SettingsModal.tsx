@@ -1,12 +1,5 @@
-import { DIFFICULTY_CONFIGS } from '../lib/game'
+import { DIFFICULTY_CARDS } from '../lib/game'
 import type { DifficultyKey, Settings } from '../lib/types'
-
-function getDifficultyCards() {
-  return (Object.keys(DIFFICULTY_CONFIGS) as DifficultyKey[]).map((key) => ({
-    key,
-    ...DIFFICULTY_CONFIGS[key],
-  }))
-}
 
 interface SettingsModalProps {
   settings: Settings
@@ -15,8 +8,6 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ settings, onUpdateSettings, onClose }: SettingsModalProps) {
-  const difficultyCards = getDifficultyCards()
-
   return (
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
@@ -46,7 +37,7 @@ export function SettingsModal({ settings, onUpdateSettings, onClose }: SettingsM
             value={settings.difficulty}
             onChange={(event) => onUpdateSettings({ difficulty: event.target.value as DifficultyKey })}
           >
-            {difficultyCards.map((card) => (
+            {DIFFICULTY_CARDS.map((card) => (
               <option key={card.key} value={card.key}>
                 {card.label}
               </option>
